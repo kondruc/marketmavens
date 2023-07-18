@@ -39,7 +39,7 @@ public class CryptoController {
         // Implementation to retrieve latest cryptocurrencies
         HttpClient httpClient = HttpClientBuilder.create().build();
         String responseBody = null;
-        HttpGet request = new HttpGet("https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=10");
+        HttpGet request = new HttpGet("https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest?limit=40");
         request.addHeader("X-CMC_PRO_API_KEY", "336d40d3-77e0-480a-91cc-c89e338b0c8d");
         try {
             HttpResponse response = httpClient.execute(request);
@@ -68,9 +68,13 @@ public class CryptoController {
             // Establish the database connection
             Connection connection = getConnection("jdbc:sqlite:identifier.sqlite");
 
+            // prepare select query
+            String selectQuery = "SELECT id FROM coinmarketapi WHERE id = ?";
+
             // Prepare the INSERT query
             String insertQuery = "INSERT INTO coinmarketapi (id, name, symbol, price, rank) " +
                     "VALUES (?, ?, ?, ?, ?)";
+            PreparedStatement selectStatement = connection.prepareStatement(selectQuery);
             PreparedStatement preparedStatement = connection.prepareStatement(insertQuery);
 
             // Insert each cryptocurrency entry into the database
@@ -82,12 +86,18 @@ public class CryptoController {
                 int rank = cryptocurrency.getInt("cmc_rank");
                 double price = cryptocurrency.getJSONObject("quote").getJSONObject("USD").getDouble("price");
 
+                // Check if the entry exists based on the unique identifier (cryptocurrency ID)
+                selectStatement.setInt(1, id);
+                if (selectStatement.executeQuery().next()) {
+                    System.out.println("Entry with ID " + id + " already exists. Skipping insertion.");
+                    continue; // Entry already exists, skip this iteration
+                }
+
                 preparedStatement.setInt(1, id);
                 preparedStatement.setString(2, name);
                 preparedStatement.setString(3, symbol);
                 preparedStatement.setDouble(4, price);
                 preparedStatement.setInt(5, rank);
-
 
                 preparedStatement.executeUpdate();
             }
