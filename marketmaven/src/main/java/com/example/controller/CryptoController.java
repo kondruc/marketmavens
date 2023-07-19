@@ -1,8 +1,9 @@
 package com.example.controller;
 
-import com.example.CryptoData;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
+import com.example.model.LoginRequest;
+import com.example.model.UserInfo;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -10,15 +11,12 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.lang.reflect.Type;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.sql.*;
 
 import static java.sql.DriverManager.getConnection;
 
@@ -27,13 +25,7 @@ import static java.sql.DriverManager.getConnection;
 @RequestMapping("/api")
 public class CryptoController {
 
-    private List<CryptoData> parseResponse(String responseBody) {
-       // Use a JSON parsing library (e.g., Gson or Jackson) to parse the response into objects
-       // Example code using Gson:
-       Gson gson = new Gson();
-       Type listType = new TypeToken<List<CryptoData>>(){}.getType();
-       return gson.fromJson(responseBody, listType);
-   }
+
     @GetMapping("/coins/latest")
     public void getLatestCryptocurrencies() {
         // Implementation to retrieve latest cryptocurrencies
@@ -113,5 +105,146 @@ public class CryptoController {
 
     }
 
+    @PostMapping("/user/add")
+    public void addUserToDatabase(@RequestBody UserInfo userInfo) {
+        try {
+            // Establish the database connection
+            Connection connection = getConnection("jdbc:sqlite:identifier.sqlite");
 
-}
+            // Prepare the INSERT query
+            String insertQuery = "INSERT INTO userdata (username, password, fullname, email, dob, image, bio) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement preparedStatement = connection.prepareStatement(insertQuery);
+
+            // Insert user information into the database
+            if (userInfo.getUserName() != null) {
+                preparedStatement.setString(1, userInfo.getUserName());
+            } else {
+                preparedStatement.setNull(1, Types.VARCHAR);
+            }
+
+            if (userInfo.getPassword() != null) {
+                preparedStatement.setString(2, userInfo.getPassword());
+            } else {
+                preparedStatement.setNull(2, Types.VARCHAR);
+            }
+
+            if (userInfo.getFullName() != null) {
+                preparedStatement.setString(3, userInfo.getFullName());
+            } else {
+                preparedStatement.setNull(3, Types.VARCHAR);
+            }
+
+            if (userInfo.getEmailId() != null) {
+                preparedStatement.setString(4, userInfo.getEmailId());
+            } else {
+                preparedStatement.setNull(4, Types.VARCHAR);
+            }
+
+            if (userInfo.getDob() != null) {
+                preparedStatement.setDate(5, (Date) userInfo.getDob());
+            } else {
+                preparedStatement.setNull(5, Types.DATE);
+            }
+
+            if (userInfo.getImage() != null) {
+                preparedStatement.setString(6, userInfo.getImage());
+            } else {
+                preparedStatement.setNull(6, Types.VARCHAR);
+            }
+
+            if (userInfo.getBio() != null) {
+                preparedStatement.setString(7, userInfo.getBio());
+            } else {
+                preparedStatement.setNull(7, Types.VARCHAR);
+            }
+
+           /* if (userInfo.getEmailId() != null) {
+                preparedStatement.setInt(3, userInfo.getEmailId());
+            } else {
+                preparedStatement.setNull(3, Types.INTEGER);
+            }*/
+            preparedStatement.executeUpdate();
+
+            // Close the resources
+            preparedStatement.close();
+            connection.close();
+
+            System.out.println("User data saved to the database successfully!");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @PostMapping("/login")
+        public ResponseEntity<String> loginUser(@RequestBody LoginRequest loginRequest) {
+            try {
+                // Validate the username and password
+                if (!validateUserCredentials(loginRequest.getUsername(), loginRequest.getPassword())) {
+                    // Authentication failed
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+                }
+
+                // Authentication successful, generate and return the JWT
+                String jwtToken = generateJwtToken(loginRequest.getUsername());
+                return ResponseEntity.ok(jwtToken);
+            } catch (Exception e) {
+                e.printStackTrace();
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error occurred during authentication");
+            }
+        }
+
+        private boolean validateUserCredentials(String username, String password) {
+            try {
+                // Establish the database connection
+                Connection connection = getConnection("jdbc:sqlite:identifier.sqlite");
+
+                // Prepare the SELECT query to check if the user exists with the given username and password
+                String selectQuery = "SELECT id FROM userdata WHERE username = ? AND password = ?";
+                PreparedStatement selectStatement = connection.prepareStatement(selectQuery);
+                selectStatement.setString(1, username);
+                selectStatement.setString(2, password);
+
+                ResultSet resultSet = selectStatement.executeQuery();
+                boolean userExists = resultSet.next();
+
+                // Close the resources
+                resultSet.close();
+                selectStatement.close();
+                connection.close();
+
+                return userExists;
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
+
+        private String generateJwtToken(String username) {
+            // Your JWT generation logic goes here
+            // Use a library like 'io.jsonwebtoken' to create a signed JWT with the user details (e.g., username)
+            // and return the generated token as a string.
+            int keyLengthBytes = 64; // 512 bits
+            String randomSecretKey = generateRandomSecretKey(keyLengthBytes);
+
+            // Example using 'io.jsonwebtoken' library:
+            String secretKey = randomSecretKey; // Replace this with your actual secret key
+            String jwtToken = Jwts.builder()
+                    .setSubject(username)
+                    .setExpiration(new Date(System.currentTimeMillis() + System.currentTimeMillis()+(60*60*1000))) // Set token expiration time
+                    .signWith(SignatureAlgorithm.HS512, secretKey)
+                    .compact();
+            return jwtToken;
+        }
+
+        private static String generateRandomSecretKey(int keyLengthBytes) {
+            SecureRandom secureRandom = new SecureRandom();
+            byte[] keyBytes = new byte[keyLengthBytes];
+            secureRandom.nextBytes(keyBytes);
+            return Base64.getEncoder().encodeToString(keyBytes);
+        }
+        // Additional code for getConnection() and other methods (if needed)
+ }
+
+
+
+
